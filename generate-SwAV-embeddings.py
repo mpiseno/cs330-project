@@ -2,10 +2,10 @@ import os
 import time
 import argparse
 
-from skimage import io
 import torch
-import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from skimage import io
+from sklearn.decomposition import PCA
 
 from util import *
 
@@ -44,7 +44,7 @@ def generate_large_embeddings():
     def embed(split_type):
         # setup datasets
         tr_normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.228, 0.224, 0.225] # this is used for imagenet but is it ok for miniImagenet?
+            mean=[0.485, 0.456, 0.406], std=[0.228, 0.224, 0.225] # using imagenet mean/std is fine
         )
         dataset = ImageDatasetWithFiles(os.path.join(MINI_IMAGENET_ROOT, split_type))
         dataset.transform = transforms.Compose([
@@ -67,7 +67,7 @@ def generate_large_embeddings():
         return len(dataset)
 
     data_len = sum([embed(split_type) for split_type in ['test', 'val']])
-    print(f'created {data_len} embeddings in {time.time() - start} seconds.')
+    print(f'Created {data_len} embeddings in {time.time() - start} seconds.')
 
 
 def reduce_embeddings(n_components):
@@ -77,9 +77,19 @@ def reduce_embeddings(n_components):
     args:
         n_components (int): number of components to use for PCA
     '''
-    data = EmbeddingDataset(LARGE_EMBEDDING_ROOT)
-    import pdb
-    pdb.set_trace()
+    start = time.time()
+
+    def apply_PCA(split_type):
+        data = EmbeddingDataset(os.path.join(LARGE_EMBEDDING_ROOT, split_type))
+        Z = torch.stack([d[0] for d in data]).detach().numpy()
+        filepaths = [d[2] for d in data]
+
+        pca = PCA(n_components=n_components)
+        reduced_Z = pca.fit_transform(Z)
+        save_embeddings(reduced_Z, filepaths, LARGE_EMBEDDING_ROOT, SMALL_EMBEDDING_ROOT)
+
+    _ = [apply_PCA(split_type) for split_type in ['train', 'val', 'test']]
+    print(f'Reduced embeddings in {time.time() - start} seconds.')
 
 
 if __name__ == '__main__':

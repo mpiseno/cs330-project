@@ -99,6 +99,7 @@ __pypackages__/
 
 mini-imagenet
 mini-imagenet-SwAV
+mini-imagenet-SwAV-reduced
 
 *.DS_STORE
 
