@@ -1,30 +1,32 @@
 import os
+import time
+import argparse
 
-from skimage import io, transform
+from skimage import io
 import torch
-import torchvision
 import torchvision.datasets as datasets
-import torch.utils.data as data
-
 import torchvision.transforms as transforms
+
+from util import *
 
 
 MINI_IMAGENET_ROOT = './mini-imagenet/'
-EMBEDDING_ROOT = './mini-imagenet-SwAV/'
+LARGE_EMBEDDING_ROOT = './mini-imagenet-SwAV/'
+SMALL_EMBEDDING_ROOT = './mini-imagenet-SwAV-reduced/'
 
 # Must download mini-imagenet dataset first
 
-def generate_dirs():
-    if not os.path.exists(EMBEDDING_ROOT):
-        os.makedirs(EMBEDDING_ROOT)
+def generate_dirs(base_root, new_root):
+    if not os.path.exists(new_root):
+        os.makedirs(new_root)
 
     def generate_data_dir(split_type):
-        embedding_sub_dir = os.path.join(EMBEDDING_ROOT, split_type)
+        embedding_sub_dir = os.path.join(new_root, split_type)
         if not os.path.exists(embedding_sub_dir):
             os.makedirs(embedding_sub_dir)
 
-        for folder in os.listdir(os.path.join(MINI_IMAGENET_ROOT, split_type)):
-            if folder.startswith('.'): continue #ignore hidden files
+        for folder in os.listdir(os.path.join(base_root, split_type)):
+            if '.' in folder: continue # skip any files. ik this would error if the file had no extension
             embedding_sub_image_dir = os.path.join(embedding_sub_dir, folder)
             if not os.path.exists(embedding_sub_image_dir):
                 os.makedirs(embedding_sub_image_dir)
@@ -32,24 +34,68 @@ def generate_dirs():
     _ = [generate_data_dir(split_type) for split_type in ['train', 'test', 'val']]
 
 
-def generate_embeddings():
+def generate_large_embeddings():
+    start = time.time()
+
+    # setup model
     model = torch.hub.load('facebookresearch/swav:main', 'resnet50')
+    model.eval()
 
-    for root, _, files in os.walk(MINI_IMAGENET_ROOT):
-        for file in files:
-            if file.startswith('.'): continue
-            
-            img_name = os.path.join(root, file)
-            image = torch.as_tensor(io.imread(img_name))
-            image = torch.reshape(image, (3, 84, 84)).unsqueeze(0).float()
+    def embed(split_type):
+        # setup datasets
+        tr_normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.228, 0.224, 0.225] # this is used for imagenet but is it ok for miniImagenet?
+        )
+        dataset = ImageDatasetWithFiles(os.path.join(MINI_IMAGENET_ROOT, split_type))
+        dataset.transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            tr_normalize,
+        ])
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=4
+        )
+
+        for batch in loader:
+            imgs, _, filepaths = batch
+            embeddings = model(imgs)
+
+            save_embeddings(embeddings, filepaths, MINI_IMAGENET_ROOT, LARGE_EMBEDDING_ROOT)
         
-            z = model(image)[0]
+        return len(dataset)
 
-            save_fp = img_name.replace(MINI_IMAGENET_ROOT, EMBEDDING_ROOT).replace('.jpg', '.pt')
-            torch.save(z, save_fp)
-            break
-           
+    data_len = sum([embed(split_type) for split_type in ['test', 'val']])
+    print(f'created {data_len} embeddings in {time.time() - start} seconds.')
 
-generate_dirs()
-generate_embeddings()
 
+def reduce_embeddings(n_components):
+    '''
+    Uses PCA to reduce dimensionality of embeddings. Assumes large embeddings (1000-dim) are already generated
+
+    args:
+        n_components (int): number of components to use for PCA
+    '''
+    data = EmbeddingDataset(LARGE_EMBEDDING_ROOT)
+    import pdb
+    pdb.set_trace()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Generates embeddings from SwAV')
+    parser.add_argument('--generate_large', dest='generate_large', action='store_const', const=True, default=False)
+    parser.add_argument('--reduce', dest='reduce', action='store_const', const=True, default=False)
+    parser.add_argument('--n_components', type=int, default=64)
+    args = parser.parse_args()
+
+    generate_dirs(MINI_IMAGENET_ROOT, LARGE_EMBEDDING_ROOT)
+    generate_dirs(MINI_IMAGENET_ROOT, SMALL_EMBEDDING_ROOT)
+
+    # Runs all images in MINI_IMAGENET_ROOT through SwAV arichtecture to generate 1000-dimensional embeddings
+    if args.generate_large:
+        generate_large_embeddings()
+    
+    # Reduces the dim of embeddings from SwAV through PCA
+    if args.reduce:
+        reduce_embeddings(n_components=args.n_components)
