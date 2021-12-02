@@ -78,8 +78,9 @@ def save_npy_arrays(imgs, labels, filepaths, img_root, embedding_root, npy_root,
         z = torch.load(z_fp)
         Z.append(z)
 
-    X = np.array(X)
-    Y = np.array(Y)
-    Z = np.array(Z)
+    shuffle_perm = np.random.permutation(len(X))
+    X = np.array(X)[shuffle_perm]
+    Y = np.array(Y)[shuffle_perm]
+    Z = np.array(Z)[shuffle_perm]
     save_path = f'./{npy_root}/{split_type}.npy'
     np.save(save_path, {'X': X, 'Y': Y, 'Z': Z}, allow_pickle=True)

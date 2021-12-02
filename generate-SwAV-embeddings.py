@@ -119,7 +119,6 @@ def generate_npy_datasets():
     print(f'Generated npy in {time.time() - start} seconds.')
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generates embeddings from SwAV')
     parser.add_argument('--generate_large', dest='generate_large', action='store_const', const=True, default=False)

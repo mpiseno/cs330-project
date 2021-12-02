@@ -101,6 +101,7 @@ mini-imagenet
 mini-imagenet-SwAV
 mini-imagenet-SwAV-reduced
 reduced-npy
+swav-finetune-*
 
 *.DS_STORE
 
